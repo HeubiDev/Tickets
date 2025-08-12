@@ -1,17 +1,19 @@
 {
-  "name": "miaudexhelper",
+  "name": "tickets-bot",
   "version": "1.0.0",
-  "description": "Helper bot for MiauDex server",
-  "license": "MIT",
-  "author": "ItsAlex",
-  "type": "commonjs",
-  "main": "bot.js",
+  "description": "Discord Ticket Bot",
+  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
-    "better-sqlite3": "^12.2.0",
-    "discord.js": "^14.21.0",
-    "dotenv": "^17.2.1"
+    "discord.js": "^14.13.0",
+    "dotenv": "^16.3.1",
+    "fs": "^0.0.1-security",
+    "path": "^0.12.7"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
   }
 }
