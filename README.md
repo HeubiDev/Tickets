@@ -41,6 +41,7 @@ The bot uses a secure permission system:
 - A Discord bot token
 - Discord.js v14
 - better-sqlite3 for database
+- Message Content Intent
 
 ## 🔧 Setup
 
