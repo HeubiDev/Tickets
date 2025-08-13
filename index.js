@@ -1,8 +1,8 @@
-const { Client, GatewayIntentBits, Collection, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, REST, Routes, MessageFlags } = require('discord.js');
 const fs = require('fs');
 require('dotenv').config();
 const cleanupTickets = require('./utils/cleanupTickets');
-require('dotenv').config();
+const { handleError } = require('./utils/interactionHandler');
 const token = process.env.DISCORD_TOKEN;
 
 // Bot-Client
@@ -29,7 +29,34 @@ for (const file of commandFiles) {
 }
 
 // ----------------------------
-// 2️⃣ Commands automatisch registrieren
+// 2️⃣ Interaktionen Handler
+// ----------------------------
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isCommand()) return;
+
+    const command = client.commands.get(interaction.commandName);
+    if (!command) return;
+
+    const timeout = setTimeout(() => {
+        if (!interaction.replied && !interaction.deferred) {
+            interaction.reply({
+                content: '⚠️ Der Command braucht zu lange zum Antworten...',
+                flags: MessageFlags.Flags.Ephemeral
+            }).catch(console.error);
+        }
+    }, 2500);
+
+    try {
+        await command.execute(interaction);
+        clearTimeout(timeout);
+    } catch (error) {
+        clearTimeout(timeout);
+        await handleError(interaction, error, interaction.commandName);
+    }
+});
+
+// ----------------------------
+// 3️⃣ Commands automatisch registrieren
 // ----------------------------
 async function registerCommands() {
     const rest = new REST({ version: '10' }).setToken(token);
@@ -47,7 +74,7 @@ async function registerCommands() {
 }
 
 // ----------------------------
-// 3️⃣ Events laden
+// 4️⃣ Events laden
 // ----------------------------
 const eventFiles = fs.readdirSync('./events').filter(file => file.endsWith('.js'));
 for (const file of eventFiles) {
@@ -59,15 +86,16 @@ for (const file of eventFiles) {
     }
 }
 
+// Start-Event manuell einbinden
+require('./events/start.js')(client);
+
 // ----------------------------
-// 4️⃣ Bot Start
+// 5️⃣ Bot Start
 // ----------------------------
 client.once('ready', async () => {
     console.log(`✅ Eingeloggt als ${client.user.tag}`);
-    await registerCommands(); // Slash-Commands beim Start hochladen
-    await cleanupTickets(client); // Ticket-Bereinigung
+    await registerCommands();
+    await cleanupTickets(client);
 });
-
-console.log('Commands:', commands);
 
 client.login(token);

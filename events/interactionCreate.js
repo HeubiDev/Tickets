@@ -1,6 +1,6 @@
 const ticketDB = require('../utils/ticketDB');
 const logSystem = require('../utils/log');
-const { EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { EmbedBuilder, PermissionFlagsBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 
 module.exports = {
     name: 'interactionCreate',
@@ -85,23 +85,49 @@ module.exports = {
             if (!ticket) {
                 return interaction.reply({
                     content: '❌ Ticket nicht gefunden!',
-                    flags: MessageFlags.Ephemeral
+                    ephemeral: true
                 });
             }
 
             if (ticket.claimedBy) {
                 return interaction.reply({
                     content: `❌ Ticket bereits geclaimt von <@${ticket.claimedBy}>!`,
-                    flags: MessageFlags.Ephemeral
+                    ephemeral: true
                 });
             }
 
+            // Ticket claimen
             ticketDB.claimTicket(channelId, interaction.user.id);
 
-            await logSystem.logAction(client, 'ticket_claim', {
-                channelId,
-                claimerId: interaction.user.id,
-                userId: ticket.userId
+            // Prioritäts-Auswahl erstellen
+            const prioritySelect = new StringSelectMenuBuilder()
+                .setCustomId(`set_priority_${channelId}`)
+                .setPlaceholder('Priorität auswählen')
+                .addOptions(
+                    {
+                        label: '🔴 Hoch',
+                        description: 'Dringende Probleme (z.B. Zahlungsfehler)',
+                        value: 'high'
+                    },
+                    {
+                        label: '🟡 Mittel',
+                        description: 'Normale Support-Anfragen',
+                        value: 'medium'
+                    },
+                    {
+                        label: '🟢 Niedrig',
+                        description: 'Allgemeine Fragen',
+                        value: 'low'
+                    }
+                );
+
+            const priorityRow = new ActionRowBuilder().addComponents(prioritySelect);
+
+            // Nachricht mit Prioritätsauswahl senden
+            await interaction.reply({
+                content: '✅ Ticket geclaimt. Bitte Priorität auswählen:',
+                components: [priorityRow],
+                ephemeral: true
             });
 
             // Benachrichtigung im Ticket-Channel
@@ -109,15 +135,71 @@ module.exports = {
             if (ticketChannel) {
                 const claimEmbed = new EmbedBuilder()
                     .setTitle('🙋 Ticket geclaimt')
-                    .setDescription(`<@${interaction.user.id}> kümmert sich nun um dieses Ticket.`)
+                    .setDescription(`<@${interaction.user.id}> kümmert sich nun um dieses Ticket.\n**Status:** Priorität wird ausgewählt...`)
                     .setColor(0xffff00);
 
                 await ticketChannel.send({ embeds: [claimEmbed] });
             }
 
-            return interaction.reply({
-                content: `✅ Du hast das Ticket <#${channelId}> geclaimt!`,
-                flags: MessageFlags.Ephemeral
+            // Logging des Claims (ohne Priorität)
+            await logSystem.logAction(client, 'ticket_claim', {
+                channelId,
+                claimerId: interaction.user.id,
+                userId: ticket.userId
+            });
+        }
+
+        // Prioritäts-Handling
+        if (interaction.isStringSelectMenu() && interaction.customId.startsWith('set_priority_')) {
+            const channelId = interaction.customId.replace('set_priority_', '');
+            const priority = interaction.values[0];
+            const ticket = ticketDB.getByChannelId(channelId);
+
+            if (!ticket) {
+                return interaction.reply({
+                    content: '❌ Ticket nicht gefunden!',
+                    ephemeral: true
+                });
+            }
+
+            // Emoji und Farbe basierend auf Priorität
+            const priorityData = {
+                high: { emoji: '🔴', color: 0xff0000, name: 'Hoch' },
+                medium: { emoji: '🟡', color: 0xffff00, name: 'Mittel' },
+                low: { emoji: '🟢', color: 0x00ff00, name: 'Niedrig' }
+            };
+
+            // Channel umbennen
+            const ticketChannel = await interaction.client.channels.fetch(channelId);
+            if (ticketChannel) {
+                const newName = ticketChannel.name.replace(/^[🔴🟡🟢]-?/, '') + priorityData[priority].emoji;
+                await ticketChannel.setName(newName).catch(console.error);
+            }
+
+            // Datenbank aktualisieren
+            ticketDB.setPriority(channelId, priority);
+
+            // Embed für Ticket-Channel
+            const priorityEmbed = new EmbedBuilder()
+                .setTitle(`📌 Priorität gesetzt: ${priorityData[priority].name}`)
+                .setDescription(`Bearbeiter: <@${interaction.user.id}>`)
+                .setColor(priorityData[priority].color)
+                .setFooter({ text: 'Ticket-System' });
+
+            await ticketChannel.send({ embeds: [priorityEmbed] });
+
+            // Logging mit Priorität
+            await logSystem.logAction(client, 'ticket_priority', {
+                channelId,
+                claimerId: interaction.user.id,
+                priority: priority,
+                userId: ticket.userId
+            });
+
+            // Bestätigung an den Bearbeiter
+            await interaction.update({
+                content: `✅ Priorität auf "${priorityData[priority].name}" gesetzt!`,
+                components: []
             });
         }
 
